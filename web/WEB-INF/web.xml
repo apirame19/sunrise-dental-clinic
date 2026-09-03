@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee
+                             https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
+         version="6.0">
+
+    <display-name>Sunrise Dental Clinic - Appointment and Patient Management System</display-name>
+
+    <!--
+      Servlets are declared with @WebServlet annotations rather than being listed here, so a
+      component and its URL mapping stay in one place. metadata-complete is therefore deliberately
+      absent (it defaults to false); setting it to true would make the container ignore those
+      annotations and the application would 404 everywhere.
+
+      Filters are the exception. @WebFilter gives no control over ordering, and the order of these
+      five is not a matter of taste:
+
+        1. EncodingFilter        must run before any parameter is read, or the container has
+                                 already decoded the request body with the platform default.
+        2. SecurityHeadersFilter must run before anything can commit a response.
+        3. AuthenticationFilter  establishes who the user is.
+        4. AuthorizationFilter   asks whether that user may have this URL - which is only a
+                                 meaningful question once step 3 has answered.
+        5. CsrfFilter            validates the token on state-changing submissions. It runs last
+                                 so that a forged POST from a signed-out browser is reported as
+                                 "please sign in" rather than as a forgery, which is what it is.
+
+      The container applies <filter-mapping> elements in the order they appear in this file, so
+      declaring them here is what makes that sequence a guarantee rather than a hope.
+    -->
+
+    <filter>
+        <filter-name>EncodingFilter</filter-name>
+        <filter-class>lk.sunrisedental.controller.filter.EncodingFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>EncodingFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <filter>
+        <filter-name>SecurityHeadersFilter</filter-name>
+        <filter-class>lk.sunrisedental.controller.filter.SecurityHeadersFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>SecurityHeadersFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <!--
+      Only /app/* is guarded. /login must stay reachable while signed out, /assets/* carries no
+      clinic data, and /api/health is the deliberately unauthenticated liveness probe. The
+      authenticated /api/* endpoints check the session themselves, in ApiServlet, because an API
+      caller needs a JSON 401 rather than a redirect to an HTML login page.
+    -->
+    <filter>
+        <filter-name>AuthenticationFilter</filter-name>
+        <filter-class>lk.sunrisedental.controller.filter.AuthenticationFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>AuthenticationFilter</filter-name>
+        <url-pattern>/app/*</url-pattern>
+    </filter-mapping>
+
+    <filter>
+        <filter-name>AuthorizationFilter</filter-name>
+        <filter-class>lk.sunrisedental.controller.filter.AuthorizationFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>AuthorizationFilter</filter-name>
+        <url-pattern>/app/*</url-pattern>
+    </filter-mapping>
+    <filter-mapping>
+        <filter-name>AuthorizationFilter</filter-name>
+        <url-pattern>/api/*</url-pattern>
+    </filter-mapping>
+
+    <filter>
+        <filter-name>CsrfFilter</filter-name>
+        <filter-class>lk.sunrisedental.controller.filter.CsrfFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>CsrfFilter</filter-name>
+        <url-pattern>/app/*</url-pattern>
+    </filter-mapping>
+    <filter-mapping>
+        <filter-name>CsrfFilter</filter-name>
+        <url-pattern>/login</url-pattern>
+    </filter-mapping>
+    <!--
+      The self-registration forms are reachable while signed out - that is their whole purpose -
+      so AuthenticationFilter is deliberately not mapped to them. They still create accounts, so
+      the CSRF filter is mapped here explicitly: without it, a page on another site could POST a
+      registration on a visitor's behalf.
+    -->
+    <filter-mapping>
+        <filter-name>CsrfFilter</filter-name>
+        <url-pattern>/register/*</url-pattern>
+    </filter-mapping>
+    <!--
+      The API is mapped too. Its endpoints authenticate with the ordinary session cookie, which
+      the browser attaches to any request to this origin - so without a token, a form on another
+      site could POST to /api/appointments on a signed-in receptionist's behalf just as easily as
+      to /app/appointments/register. A same-origin caller obtains the token from
+      GET /api/clinic/session, which an attacker's page can trigger but cannot read.
+    -->
+    <filter-mapping>
+        <filter-name>CsrfFilter</filter-name>
+        <url-pattern>/api/*</url-pattern>
+    </filter-mapping>
+
+    <session-config>
+        <!-- Idle timeout in minutes (FR-1.6). -->
+        <session-timeout>30</session-timeout>
+        <cookie-config>
+            <!-- The session cookie must not be readable by page scripts (FR-1.5, 11.3). -->
+            <http-only>true</http-only>
+            <!--
+              secure is false because development runs over plain HTTP on localhost.
+              It is switched to true for any HTTPS deployment.
+            -->
+            <secure>false</secure>
+        </cookie-config>
+        <!-- Sessions are tracked by cookie only; never by a jsessionid in the URL, which would
+             leak the session identifier into browser history, logs and Referer headers. -->
+        <tracking-mode>COOKIE</tracking-mode>
+    </session-config>
+
+    <welcome-file-list>
+        <welcome-file>index.jsp</welcome-file>
+    </welcome-file-list>
+
+    <!--
+      Container-level error pages. Every failure the application raises deliberately is turned
+      into a page by BaseServlet; these catch what it cannot - a URL matching no servlet, and any
+      fault escaping the filter chain before a servlet is reached.
+    -->
+    <error-page>
+        <error-code>404</error-code>
+        <location>/WEB-INF/views/not-found.jsp</location>
+    </error-page>
+    <error-page>
+        <exception-type>java.lang.Throwable</exception-type>
+        <location>/WEB-INF/views/fault.jsp</location>
+    </error-page>
+
+</web-app>
